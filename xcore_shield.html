@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>X-CORE // PLANETARY DEFENSE GRID</title>
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        :root {
+            --gold: #ffcc00;
+            --mint: #00ff88;
+            --hazard: #ff4444;
+            --glass: rgba(10, 10, 10, 0.9);
+        }
+
+        body { margin: 0; background: #000; font-family: 'Inter', sans-serif; overflow: hidden; color: white; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; filter: contrast(1.1) brightness(0.4) grayscale(1); }
+
+        /* Tactical HUD */
+        .hud { position: absolute; z-index: 10; width: 100%; height: 100%; pointer-events: none; }
+        
+        .card {
+            position: absolute; background: var(--glass); 
+            border: 1px solid rgba(255, 255, 255, 0.1); padding: 20px; 
+            backdrop-filter: blur(20px); pointer-events: auto;
+            border-top: 3px solid var(--gold);
+        }
+
+        #disaster-feed { top: 30px; left: 30px; width: 380px; }
+        #local-telemetry { bottom: 30px; right: 30px; width: 300px; text-align: right; border-top-color: var(--mint); }
+
+        .label { font-size: 0.6rem; color: #888; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 5px; }
+        .val { font-size: 1.2rem; font-weight: bold; font-family: monospace; }
+        .alert { color: var(--hazard); animation: pulse 1s infinite; }
+
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* Scanner Beam */
+        .scanner {
+            position: absolute; width: 100%; height: 2px; background: var(--gold);
+            box-shadow: 0 0 15px var(--gold); top: 0; animation: scan 6s infinite linear;
+        }
+        @keyframes scan { from { top: 0%; } to { top: 100%; } }
+    </style>
+</head>
+<body>
+
+    <div id="map"></div>
+    <div class="hud">
+        <div class="scanner"></div>
+
+        <div id="disaster-feed" class="card">
+            <div style="font-weight: 900; letter-spacing: 3px;">X-CORE // GLOBAL GUARDIAN</div>
+            <hr style="opacity: 0.1; margin: 15px 0;">
+            
+            <div id="threat-container">
+                <div class="label">Seismic Event Log (Live USGS)</div>
+                <div id="quake-log" style="font-size: 0.8rem; font-family: monospace; height: 100px; overflow: hidden;">SCANNING...</div>
+            </div>
+
+            <div style="margin-top: 20px;">
+                <div class="label">Atmospheric Danger Level</div>
+                <div id="weather-status" class="val" style="color: var(--mint);">NOMINAL</div>
+            </div>
+        </div>
+
+        <div id="local-telemetry" class="card">
+            <div class="label">Your Ground Station</div>
+            <div id="coords" class="val">0.00, 0.00</div>
+            <div id="locality" style="font-size: 0.7rem; color: var(--mint); margin: 5px 0;">SYNCING...</div>
+            <hr style="opacity: 0.1;">
+            <div id="time" class="val" style="font-size: 1.5rem;">00:00:00</div>
+        </div>
+    </div>
+
+    <script>
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+            center: [0, 0],
+            zoom: 1
+        });
+
+        // 1. LIVE SEISMIC DATA (Real USGS Pipe - No Key Required)
+        async function updateQuakes() {
+            const res = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson');
+            const data = await res.json();
+            const log = document.getElementById('quake-log');
+            log.innerHTML = '';
+            
+            data.features.slice(0, 5).forEach(q => {
+                const div = document.createElement('div');
+                const mag = q.properties.mag.toFixed(1);
+                div.style.color = mag > 4 ? '#ff4444' : '#fff';
+                div.innerHTML = `> MAG ${mag} - ${q.properties.place}`;
+                log.appendChild(div);
+            });
+        }
+
+        // 2. LIVE WEATHER (Open-Meteo - No Key Required)
+        async function updateWeather(lat, lon) {
+            const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`);
+            const data = await res.json();
+            const code = data.current_weather.weathercode;
+            const status = document.getElementById('weather-status');
+            
+            // WMO Weather Codes: 95+ are Thunderstorms/Storms
+            if (code >= 95) {
+                status.innerText = "CRITICAL: STORM DETECTED";
+                status.className = "val alert";
+            } else {
+                status.innerText = "STABLE / CLEAR";
+            }
+        }
+
+        // 3. GEOLOCATION SETUP
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(pos => {
+                const { latitude, longitude } = pos.coords;
+                map.flyTo({ center: [longitude, latitude], zoom: 6, speed: 1.2 });
+                document.getElementById('coords').innerText = `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
+                document.getElementById('locality').innerText = "NODE ATTACHED";
+                updateWeather(latitude, longitude);
+            });
+        }
+
+        // Sync Clock
+        setInterval(() => {
+            document.getElementById('time').innerText = new Date().toLocaleTimeString();
+            updateQuakes();
+        }, 5000);
+
+        updateQuakes();
+    </script>
+</body>
+</html>
